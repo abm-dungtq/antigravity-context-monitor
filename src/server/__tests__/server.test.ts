@@ -209,7 +209,7 @@ describe('ls-client', () => {
             conversations: [
               {
                 id: 'live-1',
-                metadata: { projectId: '/Volumes/2/AGY/AGY-Plugin' },
+                metadata: { projectId: '/workspace/context-monitor' },
                 annotations: { title: 'Live Title' },
                 state: {
                   summary: 'Live Summary',
@@ -227,7 +227,7 @@ describe('ls-client', () => {
           plugins: [
             {
               name: 'context-monitor',
-              path: 'file:///Users/tqd/.gemini/config/plugins/context-monitor',
+              path: 'file:///Users/demo/.gemini/config/plugins/context-monitor',
               disabled: false,
               skills: [{ name: 'context-monitor' }],
               mcpServers: [
@@ -256,12 +256,12 @@ describe('ls-client', () => {
           summary: 'Live Summary',
           runState: 'RUN_STATE_RUNNING',
           updateTime: '2026-11-26T07:30:00Z',
-          projectId: '/Volumes/2/AGY/AGY-Plugin',
+          projectId: '/workspace/context-monitor',
         },
       ],
     });
 
-    const plugins = await fetchLsPlugins('/Volumes/2/AGY/AGY-Plugin', {
+    const plugins = await fetchLsPlugins('/workspace/context-monitor', {
       ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:43210',
       ANTIGRAVITY_CSRF_TOKEN: 'tok-1',
     });
@@ -270,7 +270,7 @@ describe('ls-client', () => {
       plugins: [
         {
           name: 'context-monitor',
-          dir: '/Users/tqd/.gemini/config/plugins/context-monitor',
+          dir: '/Users/demo/.gemini/config/plugins/context-monitor',
           disabled: false,
           skills: [{ name: 'context-monitor' }],
           agents: [],

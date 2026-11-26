@@ -3,6 +3,8 @@
   "displayName": "Context Monitor",
   "version": "1.0.0",
   "description": "Live Antigravity context window breakdown by messages, memory rules, system prompt, skills, tools, custom agents, and MCP servers.",
+  "homepage": "https://github.com/abm-dungtq/antigravity-context-monitor",
+  "repository": "https://github.com/abm-dungtq/antigravity-context-monitor",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
     "Open Context Monitor to inspect what is using my context window",

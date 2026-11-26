@@ -7,8 +7,11 @@ Interactive MCP App plugin for Antigravity showing live context window usage by 
 ## Cài đặt / Installation
 
 ```bash
+git clone https://github.com/abm-dungtq/antigravity-context-monitor.git
+cd antigravity-context-monitor
 npm install
 npm run build
+ln -sfn "$(pwd)" ~/.gemini/config/plugins/context-monitor
 ```
 
 Link or install this directory as an Antigravity plugin (containing `plugin.json`, `mcp_config.json`, `bin/context-monitor-server`, `skills/context-monitor/SKILL.md`, and `dist/`).

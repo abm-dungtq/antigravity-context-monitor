@@ -55,8 +55,8 @@ describe('UI escaping & file URI encoding', () => {
     expect(toEncodedFileUri('file:///already/encoded%20path')).toBe(
       'file:///already/encoded%20path',
     );
-    expect(toEncodedFileUri('/Users/tqd/My Docs/file #1 (100%).md')).toBe(
-      'file:///Users/tqd/My%20Docs/file%20%231%20(100%25).md',
+    expect(toEncodedFileUri('/Users/demo/My Docs/file #1 (100%).md')).toBe(
+      'file:///Users/demo/My%20Docs/file%20%231%20(100%25).md',
     );
     expect(toEncodedFileUri('/tmp/Tài liệu/AGENTS.md')).toBe(
       'file:///tmp/T%C3%A0i%20li%E1%BB%87u/AGENTS.md',

@@ -11,7 +11,7 @@ export const SAMPLE_CONVERSATIONS: ConversationSummary[] = [
     usedPercent: 12.4,
     turns: 8,
     updatedAt: '2026-11-26T14:25:00Z',
-    workspacePath: '/Volumes/2/AGY/AGY-Plugin',
+    workspacePath: '/workspace/context-monitor',
   },
   {
     id: '8f1c9a12-4012-43ba-9f22-1194a8b1cc02',
@@ -23,7 +23,7 @@ export const SAMPLE_CONVERSATIONS: ConversationSummary[] = [
     usedPercent: 59.2,
     turns: 14,
     updatedAt: '2026-11-26T11:10:00Z',
-    workspacePath: '/Volumes/2/AGY/auth-service',
+    workspacePath: '/workspace/auth-service',
   },
   {
     id: '22b09e77-118a-4d5e-81ab-9c01e4a05118',
@@ -90,21 +90,21 @@ export const SAMPLE_SNAPSHOT: ContextSnapshot = {
   ],
   accordions: {
     mcpTools: [
-      { name: 'github_create_pull_request', group: 'github', tokens: 680, status: 'lazy', path: '/Users/tqd/.gemini/antigravity/mcp/github/create_pull_request.json' },
-      { name: 'playwright_screenshot', group: 'playwright', tokens: 510, status: 'lazy', path: '/Users/tqd/.gemini/antigravity/mcp/playwright/screenshot.json' },
-      { name: 'postgres_query', group: 'postgres', tokens: 420, status: 'lazy', path: '/Users/tqd/.gemini/antigravity/mcp/postgres/query.json' },
+      { name: 'github_create_pull_request', group: 'github', tokens: 680, status: 'lazy', path: '/Users/demo/.gemini/antigravity/mcp/github/create_pull_request.json' },
+      { name: 'playwright_screenshot', group: 'playwright', tokens: 510, status: 'lazy', path: '/Users/demo/.gemini/antigravity/mcp/playwright/screenshot.json' },
+      { name: 'postgres_query', group: 'postgres', tokens: 420, status: 'lazy', path: '/Users/demo/.gemini/antigravity/mcp/postgres/query.json' },
     ],
     memoryFiles: [
-      { name: 'GEMINI.md', sublabel: '~/.gemini/GEMINI.md', path: '/Users/tqd/.gemini/GEMINI.md', tokens: 4_120, status: 'loaded' },
-      { name: 'AGENTS.md', sublabel: 'Workspace', path: '/Volumes/2/AGY/AGY-Plugin/AGENTS.md', tokens: 2_650, status: 'loaded' },
-      { name: 'editorial-gate.md', sublabel: 'rules', path: '/Users/tqd/.gemini/config/rules/editorial-gate.md', tokens: 1_890, status: 'loaded' },
+      { name: 'GEMINI.md', sublabel: '~/.gemini/GEMINI.md', path: '/Users/demo/.gemini/GEMINI.md', tokens: 4_120, status: 'loaded' },
+      { name: 'AGENTS.md', sublabel: 'Workspace', path: '/workspace/context-monitor/AGENTS.md', tokens: 2_650, status: 'loaded' },
+      { name: 'editorial-gate.md', sublabel: 'rules', path: '/Users/demo/.gemini/config/rules/editorial-gate.md', tokens: 1_890, status: 'loaded' },
     ],
     skills: [
-      { name: 'mcp-app-development', sublabel: 'builtin', path: '/Users/tqd/.gemini/antigravity/builtin/skills/mcp-app-development/SKILL.md', tokens: 3_400, status: 'loaded' },
-      { name: 'ak-frontend-design', sublabel: 'config', path: '/Users/tqd/.gemini/config/skills/ak-frontend-design/SKILL.md', tokens: 2_100, status: 'indexed' },
+      { name: 'mcp-app-development', sublabel: 'builtin', path: '/Users/demo/.gemini/antigravity/builtin/skills/mcp-app-development/SKILL.md', tokens: 3_400, status: 'loaded' },
+      { name: 'ak-frontend-design', sublabel: 'config', path: '/Users/demo/.gemini/config/skills/ak-frontend-design/SKILL.md', tokens: 2_100, status: 'indexed' },
     ],
     customAgents: [
-      { name: 'code-reviewer', sublabel: 'agents/code-reviewer.md', path: '/Users/tqd/.gemini/config/agents/code-reviewer.md', tokens: 950, status: 'active' },
+      { name: 'code-reviewer', sublabel: 'agents/code-reviewer.md', path: '/Users/demo/.gemini/config/agents/code-reviewer.md', tokens: 950, status: 'active' },
       { name: 'research', sublabel: 'builtin', tokens: 420, status: 'active' },
     ],
     turnMessages: [
@@ -116,6 +116,6 @@ export const SAMPLE_SNAPSHOT: ContextSnapshot = {
   meta: {
     source: 'transcript_full',
     lsConnected: true,
-    workspacePath: '/Volumes/2/AGY/AGY-Plugin',
+    workspacePath: '/workspace/context-monitor',
   },
 };
