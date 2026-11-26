@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <rect x="12" y="12" width="104" height="104" rx="24" fill="#18181B" stroke="#3F3F46" stroke-width="2.5"/>
+  <!-- Segmented context gauge arc (240 deg sweep around center 64,60) -->
+  <path d="M 32.8 78 A 36 36 0 0 1 46 28.8" stroke="#2563EB" stroke-width="9" stroke-linecap="round"/>
+  <path d="M 52.8 25.8 A 36 36 0 0 1 75.2 25.8" stroke="#EA580C" stroke-width="9" stroke-linecap="round"/>
+  <path d="M 82 28.8 A 36 36 0 0 1 95.6 46.5" stroke="#059669" stroke-width="9" stroke-linecap="round"/>
+  <path d="M 98.3 53.5 A 36 36 0 0 1 95.2 78" stroke="#EAB308" stroke-width="9" stroke-linecap="round"/>
+  <!-- Center needle dot -->
+  <circle cx="64" cy="60" r="6" fill="#F4F4F5"/>
+  <path d="M 64 60 L 81 43" stroke="#F4F4F5" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Bottom breakdown bar -->
+  <rect x="26" y="92" width="76" height="8" rx="4" fill="#27272A"/>
+  <rect x="26" y="92" width="32" height="8" rx="4" fill="#2563EB"/>
+  <rect x="60" y="92" width="14" height="8" rx="2" fill="#EA580C"/>
+  <rect x="76" y="92" width="12" height="8" rx="2" fill="#059669"/>
+  <rect x="90" y="92" width="12" height="8" rx="4" fill="#EAB308"/>
+</svg>

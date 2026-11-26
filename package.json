@@ -1,0 +1,26 @@
+{
+  "name": "agy-context-inspector",
+  "version": "0.1.0",
+  "description": "Antigravity MCP App plugin for inspecting conversation context usage",
+  "type": "module",
+  "scripts": {
+    "build:ui": "vite build",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/server/index.js --packages=external",
+    "build": "npm run build:ui && npm run build:server",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.2"
+  }
+}

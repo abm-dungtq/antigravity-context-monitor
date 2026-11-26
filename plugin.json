@@ -1,0 +1,12 @@
+{
+  "name": "context-monitor",
+  "displayName": "Context Monitor",
+  "version": "1.0.0",
+  "description": "Live Antigravity context window breakdown by messages, memory rules, system prompt, skills, tools, custom agents, and MCP servers.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Open Context Monitor to inspect what is using my context window",
+    "Which skills, rules, or MCP tools consume the most context tokens?",
+    "Check context growth and cache hit rate for the current conversation"
+  ]
+}
