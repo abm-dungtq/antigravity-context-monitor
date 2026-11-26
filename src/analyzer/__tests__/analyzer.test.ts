@@ -543,6 +543,94 @@ describe('analyzer & reconciliation', () => {
       overflowSnap.totalUsedTokens
     );
   });
+
+  it('excludes internal worker folders when lsConversations is connected, skips disabled MCP servers, avoids double-prefixing, and tolerates truncated trailing JSONL', async () => {
+    const root = makeTempDir('agy-edge-');
+    const appDataDir = path.join(root, 'antigravity');
+    const configDir = path.join(root, 'config');
+
+    // Interactive + internal worker conversations on disk
+    const interactiveLogs = path.join(appDataDir, 'brain', 'interactive-1', '.system_generated', 'logs');
+    const workerLogs = path.join(appDataDir, 'brain', 'worker-1', '.system_generated', 'logs');
+    const requestedLogs = path.join(appDataDir, 'brain', 'requested-1', '.system_generated', 'logs');
+    fs.mkdirSync(interactiveLogs, { recursive: true });
+    fs.mkdirSync(workerLogs, { recursive: true });
+    fs.mkdirSync(requestedLogs, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(interactiveLogs, 'transcript_full.jsonl'),
+      [
+        JSON.stringify({ step_index: 0, type: 'USER_INPUT', created_at: '2026-11-26T03:00:00Z', content: 'Hello' }),
+        JSON.stringify({ step_index: 1, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T03:00:05Z', model: 'gemini-4-neon-high', input_tokens: 30_000, cache_read_tokens: 0, output_tokens: 100 }),
+        '{"step_index":2,"type":"PLANNER_RESPONSE","trun',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(workerLogs, 'transcript.jsonl'),
+      JSON.stringify({ step_index: 0, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T03:05:00Z', model: 'gemini-4-hydrogen-high', input_tokens: 18_000, cache_read_tokens: 0, output_tokens: 50 }) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(requestedLogs, 'transcript.jsonl'),
+      JSON.stringify({ step_index: 0, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T03:01:00Z', model: 'gemini-4-neon-high', input_tokens: 12_000, cache_read_tokens: 0, output_tokens: 50 }) + '\n'
+    );
+
+    const parsed = await parseTranscript(appDataDir, 'interactive-1');
+    expect(parsed.turns).toHaveLength(1);
+    expect(parsed.totalUsedTokens).toBe(30_000);
+
+    const lsConvs = [
+      { id: 'interactive-1', title: 'Interactive Session', runState: 'RUN_STATE_RUNNING', updateTime: '2026-11-26T03:00:05Z' },
+    ];
+    const filteredList = await listConversationsSummary({
+      appDataDir,
+      lsConversations: lsConvs,
+    });
+    expect(filteredList.map((c) => c.id)).toEqual(['interactive-1']);
+
+    const withRequested = await listConversationsSummary({
+      appDataDir,
+      lsConversations: lsConvs,
+      includeConversationId: 'requested-1',
+    });
+    expect(withRequested.map((c) => c.id)).toEqual(['requested-1', 'interactive-1']);
+    expect(withRequested.map((c) => c.id)).not.toContain('worker-1');
+
+    // Disabled MCP servers skipped + plugin MCP server prefix not duplicated
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'mcp_config.json'),
+      JSON.stringify({
+        mcpServers: {
+          activeSrv: { command: 'node' },
+          disabledSrv: { command: 'node', disabled: true },
+          enabledFalseSrv: { command: 'node', enabled: false },
+        },
+      })
+    );
+    for (const srv of ['activeSrv', 'disabledSrv', 'enabledFalseSrv', 'plug_tool']) {
+      const dir = path.join(appDataDir, 'mcp', srv);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'instructions.md'), `Instructions for ${srv}`);
+    }
+
+    const scan = scanWorkspaceContext({
+      appDataDir,
+      configDir,
+      lsPlugins: [
+        {
+          name: 'plug',
+          dir: '/nonexistent/plug',
+          disabled: false,
+          mcpServers: [{ name: 'plug_tool' }],
+        },
+      ],
+    });
+    const instNames = scan.mcpInstructions.map((i) => i.name);
+    expect(instNames).toContain('activeSrv/instructions.md');
+    expect(instNames).toContain('plug_tool/instructions.md');
+    expect(instNames).not.toContain('disabledSrv/instructions.md');
+    expect(instNames).not.toContain('enabledFalseSrv/instructions.md');
+  });
 });
 
 describe('real local brain integration (if present)', () => {

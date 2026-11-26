@@ -35,6 +35,7 @@ import {
   copyTextWithFallback,
   escapeHtml,
   renderRefreshSvg,
+  toEncodedFileUri,
 } from './utils/dom.js';
 
 const ToggleAuxPaneResultSchema = z
@@ -123,6 +124,8 @@ let isConnected = false;
 let toastTimer: number | null = null;
 let badgeTimer: number | null = null;
 let lastRefreshAt = 0;
+let activeRequestSeq = 0;
+let inFlightCount = 0;
 
 function showToast(message: string): void {
   state.toastMessage = message;
@@ -147,7 +150,7 @@ function applyHostContext(ctx: McpUiHostContext | undefined): void {
   }
 }
 
-function applyPayload(data: unknown): void {
+function applyPayload(data: unknown, explicitTargetId?: string): void {
   if (!data || typeof data !== 'object') return;
   const record = data as Record<string, unknown>;
   const snap = (record.snapshot as ContextSnapshot | undefined) ?? undefined;
@@ -157,7 +160,9 @@ function applyPayload(data: unknown): void {
 
   if (snap) {
     state.snapshot = snap;
-    if (!state.selectedConversationId || snap.conversation?.id) {
+    if (explicitTargetId) {
+      state.selectedConversationId = explicitTargetId;
+    } else if (!state.selectedConversationId && snap.conversation?.id) {
       state.selectedConversationId = snap.conversation.id;
     }
     state.loading = false;
@@ -184,28 +189,34 @@ function extractTextFromContent(content: unknown): string | null {
   return texts.length > 0 ? texts.join('\n') : null;
 }
 
-function handleToolResult(params: {
-  structuredContent?: unknown;
-  content?: unknown;
-  isError?: boolean;
-}): void {
+function handleToolResult(
+  params: {
+    structuredContent?: unknown;
+    content?: unknown;
+    isError?: boolean;
+  },
+  explicitTargetId?: string,
+): void {
   if (params.isError) {
     state.loading = false;
-    state.isRefreshing = false;
+    state.isRefreshing = inFlightCount > 0;
     state.errorMessage = extractTextFromContent(params.content) ?? 'Error loading context';
     render();
     return;
   }
   if (params.structuredContent) {
-    applyPayload(params.structuredContent);
+    applyPayload(params.structuredContent, explicitTargetId);
   }
   state.loading = false;
-  state.isRefreshing = false;
+  state.isRefreshing = inFlightCount > 0;
   render();
 }
 
-async function refreshContext(targetId?: string): Promise<void> {
-  if (state.isRefreshing) return;
+async function refreshContext(
+  targetId?: string,
+  opts?: { userInitiated?: boolean; forceRefresh?: boolean },
+): Promise<void> {
+  if (!opts?.userInitiated && state.isRefreshing) return;
 
   if (isStandalone) {
     if (targetId && state.conversations.length > 0) {
@@ -227,6 +238,8 @@ async function refreshContext(targetId?: string): Promise<void> {
 
   if (!app || !isConnected) return;
 
+  const seq = ++activeRequestSeq;
+  inFlightCount++;
   state.isRefreshing = true;
   render();
 
@@ -237,16 +250,26 @@ async function refreshContext(targetId?: string): Promise<void> {
     if (state.snapshot?.meta.workspacePath) {
       args.workspacePath = state.snapshot.meta.workspacePath;
     }
+    if (opts?.forceRefresh) {
+      args.forceRefresh = true;
+    }
 
     const result = await app.callServerTool({
       name: 'refresh_context',
       arguments: args,
     });
+    inFlightCount = Math.max(0, inFlightCount - 1);
+    if (seq !== activeRequestSeq) {
+      state.isRefreshing = inFlightCount > 0;
+      render();
+      return;
+    }
     lastRefreshAt = Date.now();
-    handleToolResult(result);
+    handleToolResult(result, targetId);
   } catch (err) {
-    state.isRefreshing = false;
-    if (state.loading) {
+    inFlightCount = Math.max(0, inFlightCount - 1);
+    state.isRefreshing = inFlightCount > 0;
+    if (seq === activeRequestSeq && state.loading) {
       state.loading = false;
       state.errorMessage = err instanceof Error ? err.message : String(err);
     }
@@ -615,7 +638,7 @@ async function openFileInAuxPane(filePath: string): Promise<void> {
   }
 
   try {
-    const uri = filePath.startsWith('file://') ? filePath : `file://${filePath}`;
+    const uri = toEncodedFileUri(filePath);
     const res = await app.request(
       {
         method: 'com.google.antigravity/toggle-aux-pane',
@@ -659,7 +682,7 @@ function attachDomEvents(): void {
       }
 
       if (action === 'manual-refresh') {
-        void refreshContext();
+        void refreshContext(undefined, { userInitiated: true, forceRefresh: true });
         return;
       }
 
@@ -764,7 +787,7 @@ function attachDomEvents(): void {
       const id = convEl.dataset.selectConversation;
       if (id !== state.selectedConversationId) {
         state.selectedConversationId = id;
-        void refreshContext(id);
+        void refreshContext(id, { userInitiated: true });
       }
       return;
     }

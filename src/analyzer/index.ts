@@ -82,9 +82,11 @@ export async function listConversationsSummary(opts?: {
   appDataDir?: string;
   limit?: number;
   lsConversations?: LsConversationInput[];
+  includeConversationId?: string;
 }): Promise<ConversationSummary[]> {
   const appDataDir = opts?.appDataDir || getDefaultAppDataDir();
   const brainDir = path.join(appDataDir, 'brain');
+  const hasBrainDir = fs.existsSync(brainDir);
 
   const lsById = new Map<string, LsConversationInput>();
   if (Array.isArray(opts?.lsConversations)) {
@@ -94,55 +96,20 @@ export async function listConversationsSummary(opts?: {
   }
 
   const summaries: ConversationSummary[] = [];
-  const seenIds = new Set<string>();
 
-  if (fs.existsSync(brainDir)) {
-    const entries = fs.readdirSync(brainDir, { withFileTypes: true });
-    const candidates: Array<{ id: string; mtimeMs: number }> = [];
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      const id = entry.name;
-      const logsDir = path.join(brainDir, id, '.system_generated', 'logs');
-      const compactPath = path.join(logsDir, 'transcript.jsonl');
-      const fullPath = path.join(logsDir, 'transcript_full.jsonl');
-
-      const ls = lsById.get(id);
-      const lsMs = ls?.updateTime ? Date.parse(ls.updateTime) || 0 : 0;
-
-      let mtimeMs = -1;
-      try {
-        mtimeMs = Math.max(fs.statSync(compactPath).mtimeMs, lsMs);
-      } catch {
-        try {
-          mtimeMs = Math.max(fs.statSync(fullPath).mtimeMs, lsMs);
-        } catch {
-          if (ls) {
-            mtimeMs = lsMs;
-          }
-        }
-      }
-
-      if (mtimeMs >= 0) {
-        candidates.push({ id, mtimeMs });
-      }
+  if (lsById.size > 0) {
+    // When LS is connected, only list interactive conversations returned by LS
+    // (plus an explicitly requested/current conversation ID if present on disk),
+    // preventing internal swarm/subagent worker folders from cluttering the list.
+    const targetIds = new Set<string>(lsById.keys());
+    const extraId = opts?.includeConversationId?.trim();
+    if (extraId && hasBrainDir && fs.existsSync(path.join(brainDir, extraId))) {
+      targetIds.add(extraId);
     }
 
-    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-
-    const maxToRead =
-      typeof opts?.limit === 'number' && opts.limit > 0
-        ? Math.min(candidates.length, opts.limit)
-        : candidates.length;
-
-    for (let i = 0; i < maxToRead; i++) {
-      const id = candidates[i].id;
-      const quick = readConversationQuickStats(brainDir, id);
+    for (const id of targetIds) {
       const ls = lsById.get(id);
-
-      if (!quick && !ls) continue;
-
-      seenIds.add(id);
+      const quick = hasBrainDir ? readConversationQuickStats(brainDir, id) : null;
       const model = quick?.model || 'unknown';
       const { contextLimit } = getModelContextConfig(model);
       const totalTokens = quick?.totalTokens ?? 0;
@@ -165,24 +132,63 @@ export async function listConversationsSummary(opts?: {
         workspacePath: quick?.workspacePath,
       });
     }
-  }
+  } else if (hasBrainDir) {
+    const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+    const candidates: Array<{ id: string; mtimeMs: number }> = [];
 
-  // Include any LS conversations not yet materialized in brainDir
-  for (const [id, ls] of lsById.entries()) {
-    if (seenIds.has(id)) continue;
-    const { contextLimit } = getModelContextConfig('unknown');
-    summaries.push({
-      id,
-      title: ls.title?.trim() || `Conversation ${id.slice(0, 8)}`,
-      summary: ls.summary,
-      model: 'unknown',
-      runState: ls.runState || 'RUN_STATE_IDLE',
-      totalTokens: 0,
-      contextLimit,
-      usedPercent: 0,
-      turns: 0,
-      updatedAt: ls.updateTime || new Date(0).toISOString(),
-    });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const id = entry.name;
+      const logsDir = path.join(brainDir, id, '.system_generated', 'logs');
+      const compactPath = path.join(logsDir, 'transcript.jsonl');
+      const fullPath = path.join(logsDir, 'transcript_full.jsonl');
+
+      let mtimeMs = -1;
+      try {
+        mtimeMs = fs.statSync(compactPath).mtimeMs;
+      } catch {
+        try {
+          mtimeMs = fs.statSync(fullPath).mtimeMs;
+        } catch {
+          // No transcript yet
+        }
+      }
+
+      if (mtimeMs >= 0) {
+        candidates.push({ id, mtimeMs });
+      }
+    }
+
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    const maxToRead =
+      typeof opts?.limit === 'number' && opts.limit > 0
+        ? Math.min(candidates.length, opts.limit)
+        : candidates.length;
+
+    for (let i = 0; i < maxToRead; i++) {
+      const id = candidates[i].id;
+      const quick = readConversationQuickStats(brainDir, id);
+      if (!quick) continue;
+
+      const model = quick.model || 'unknown';
+      const { contextLimit } = getModelContextConfig(model);
+      const totalTokens = quick.totalTokens ?? 0;
+      const title = quick.firstUserContent?.slice(0, 72) || `Conversation ${id.slice(0, 8)}`;
+
+      summaries.push({
+        id,
+        title,
+        model,
+        runState: 'RUN_STATE_IDLE',
+        totalTokens,
+        contextLimit,
+        usedPercent: toPercent(totalTokens, contextLimit),
+        turns: quick.turns ?? 0,
+        updatedAt: quick.updatedAt || new Date(0).toISOString(),
+        workspacePath: quick.workspacePath,
+      });
+    }
   }
 
   summaries.sort((a, b) => {
@@ -200,7 +206,7 @@ export async function listConversationsSummary(opts?: {
 const CATEGORY_LABELS: Record<CategoryId, { vi: string; en: string }> = {
   messages: { vi: 'Tin nhắn', en: 'Messages' },
   memory_files: { vi: 'Tệp bộ nhớ', en: 'Memory files' },
-  system_prompt: { vi: 'Lời nhắc hệ thống', en: 'System prompt' },
+  system_prompt: { vi: 'Câu lệnh hệ thống', en: 'System prompt' },
   skills: { vi: 'Skills', en: 'Skills' },
   system_tools: { vi: 'Công cụ hệ thống', en: 'System tools' },
   custom_agents: { vi: 'Tác nhân tùy chỉnh', en: 'Custom agents' },

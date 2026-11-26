@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export interface LsConversation {
   id: string;
@@ -34,7 +34,7 @@ export interface LsCredentials {
   token: string;
 }
 
-const LS_TIMEOUT_MS = 1500;
+const LS_TIMEOUT_MS = 4500;
 
 export function getLsCredentials(env: NodeJS.ProcessEnv = process.env): LsCredentials | null {
   const addr = env.ANTIGRAVITY_LS_ADDRESS?.trim();
@@ -100,6 +100,7 @@ function normalizePluginDir(raw: string | undefined): string {
 
 export async function fetchLsConversations(
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = LS_TIMEOUT_MS,
 ): Promise<LsConversationsResult> {
   const creds = getLsCredentials(env);
   if (!creds) {
@@ -114,6 +115,7 @@ export async function fetchLsConversations(
       'x-antigravity-csrf-token': creds.token,
     },
     { pageSize: 30, includeArchived: false },
+    timeoutMs,
   );
 
   if (!data) {
@@ -149,17 +151,25 @@ export async function fetchLsConversations(
 export async function fetchLsPlugins(
   workspacePath?: string,
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = LS_TIMEOUT_MS,
 ): Promise<LsPluginsResult> {
   const creds = getLsCredentials(env);
   if (!creds) {
     return { connected: false, plugins: [] };
   }
 
-  const normalizedUri = workspacePath
-    ? workspacePath.startsWith('file://')
-      ? workspacePath
-      : `file://${workspacePath}`
-    : undefined;
+  let normalizedUri: string | undefined;
+  if (workspacePath) {
+    if (workspacePath.startsWith('file://')) {
+      normalizedUri = workspacePath;
+    } else {
+      try {
+        normalizedUri = pathToFileURL(workspacePath).href;
+      } catch {
+        normalizedUri = `file://${workspacePath}`;
+      }
+    }
+  }
 
   const data = await postJson(
     `${creds.baseUrl}/exa.language_server_pb.LanguageServerService/GetAllPlugins`,
@@ -168,6 +178,7 @@ export async function fetchLsPlugins(
       'x-codeium-csrf-token': creds.token,
     },
     normalizedUri ? { workspaceUris: [normalizedUri] } : {},
+    timeoutMs,
   );
 
   if (!data) {

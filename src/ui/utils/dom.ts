@@ -7,6 +7,21 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
+/**
+ * Safely encodes a local filesystem path as a `file://` URI, escaping spaces,
+ * `#`, `%`, and non-ASCII characters while preserving path separators and Windows drive letters.
+ */
+export function toEncodedFileUri(filePath: string): string {
+  if (filePath.startsWith('file://')) return filePath;
+  const normalized = filePath.replaceAll('\\', '/');
+  const encodedSegments = normalized.split('/').map((seg, idx) => {
+    if (idx === 0 && /^[A-Za-z]:$/.test(seg)) return seg;
+    return encodeURIComponent(seg);
+  });
+  const joined = encodedSegments.join('/');
+  return joined.startsWith('/') ? `file://${joined}` : `file:///${joined}`;
+}
+
 export async function copyTextWithFallback(text: string): Promise<boolean> {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     try {

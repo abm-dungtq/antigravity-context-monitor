@@ -326,8 +326,18 @@ function readMcpServerKeys(mcpConfigPath: string): string[] {
   const json = safeReadJson(mcpConfigPath);
   const servers = json?.mcpServers;
   if (!servers || typeof servers !== 'object') return [];
-  // Only return server names; never read env, headers, args, or tokens
-  return Object.keys(servers as Record<string, unknown>);
+  // Only return enabled server names; never read env, headers, args, or tokens
+  const keys: string[] = [];
+  for (const [key, val] of Object.entries(servers as Record<string, unknown>)) {
+    if (val && typeof val === 'object') {
+      const cfg = val as Record<string, unknown>;
+      if (cfg.disabled === true || cfg.enabled === false) {
+        continue;
+      }
+    }
+    keys.push(key);
+  }
+  return keys;
 }
 
 /**
@@ -482,7 +492,9 @@ export function scanWorkspaceContext(opts?: {
       ? plugin.mcpServers.map((s) => s.name)
       : readMcpServerKeys(path.join(plugin.dirPath, 'mcp_config.json'));
     for (const key of names) {
-      const namespaced = `${plugin.name}_${key}`;
+      const namespaced = key.startsWith(`${plugin.name}_`)
+        ? key
+        : `${plugin.name}_${key}`;
       registerServer(namespaced, [namespaced, key]);
     }
   }

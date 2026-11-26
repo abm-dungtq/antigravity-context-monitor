@@ -18,6 +18,8 @@ import { fetchLsConversations, fetchLsPlugins } from './ls-client.js';
 
 export const APP_RESOURCE_URI = 'ui://context-monitor/app.html';
 export const MAX_STRUCTURED_PAYLOAD_BYTES = 850_000;
+const LS_PLUGINS_TTL_MS = 30_000;
+const LS_CONVERSATIONS_TTL_MS = 5_000;
 
 export interface ServerDeps {
   appDataDir?: string;
@@ -28,6 +30,7 @@ export interface ServerDeps {
     appDataDir?: string;
     limit?: number;
     lsConversations?: LsConversationInput[];
+    includeConversationId?: string;
   }) => Promise<ConversationSummary[]>;
   fetchLsConversations?: (
     env?: NodeJS.ProcessEnv,
@@ -219,6 +222,7 @@ const ContextToolArgsSchema = z.object({
   conversationId: z.string().optional(),
   workspacePath: z.string().optional(),
   windowOverride: z.number().positive().optional(),
+  forceRefresh: z.boolean().optional(),
 });
 
 const ListConversationsArgsSchema = z.object({
@@ -267,23 +271,62 @@ export function createContextMonitorServer(deps: ServerDeps = {}): McpServer {
     }),
   );
 
+  let lsConvsCache: {
+    expiresAt: number;
+    value: { connected: boolean; conversations: LsConversationInput[] };
+  } | null = null;
+  const lsPluginsCache = new Map<
+    string,
+    { expiresAt: number; value: { connected: boolean; plugins: LsPluginInput[] } }
+  >();
+
+  async function getCachedLsConversations(forceRefresh?: boolean) {
+    const now = Date.now();
+    if (!forceRefresh && lsConvsCache && lsConvsCache.expiresAt > now) {
+      return lsConvsCache.value;
+    }
+    const res = await runFetchLsConversations(env);
+    if (res.connected) {
+      lsConvsCache = { expiresAt: now + LS_CONVERSATIONS_TTL_MS, value: res };
+    }
+    return res;
+  }
+
+  async function getCachedLsPlugins(workspacePath: string | undefined, forceRefresh?: boolean) {
+    const key = workspacePath ?? '';
+    const now = Date.now();
+    const cached = lsPluginsCache.get(key);
+    if (!forceRefresh && cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+    const res = await runFetchLsPlugins(workspacePath, env);
+    if (res.connected) {
+      lsPluginsCache.set(key, { expiresAt: now + LS_PLUGINS_TTL_MS, value: res });
+    }
+    return res;
+  }
+
   async function buildContextPayload(args: {
     conversationId?: string;
     workspacePath?: string;
     windowOverride?: number;
+    forceRefresh?: boolean;
   }): Promise<{ snapshot: ContextSnapshot; conversations: ConversationSummary[] }> {
     const [lsConvRes, lsPluginsRes] = await Promise.all([
-      runFetchLsConversations(env),
-      runFetchLsPlugins(args.workspacePath, env),
+      getCachedLsConversations(args.forceRefresh),
+      getCachedLsPlugins(args.workspacePath, args.forceRefresh),
     ]);
 
     const lsConversations = lsConvRes.connected ? lsConvRes.conversations : undefined;
     const lsPlugins = lsPluginsRes.connected ? lsPluginsRes.plugins : undefined;
+    const includeConversationId =
+      args.conversationId?.trim() || env.ANTIGRAVITY_CONVERSATION_ID?.trim() || undefined;
 
     const conversations = await runListConversations({
       appDataDir,
       limit: 30,
       lsConversations,
+      includeConversationId,
     });
 
     const resolvedConversationId = resolveTargetConversationId(
@@ -383,11 +426,12 @@ export function createContextMonitorServer(deps: ServerDeps = {}): McpServer {
       },
     },
     async (args) => {
-      const lsConvRes = await runFetchLsConversations(env);
+      const lsConvRes = await getCachedLsConversations(false);
       const conversations = await runListConversations({
         appDataDir,
         limit: args?.limit ?? 30,
         lsConversations: lsConvRes.connected ? lsConvRes.conversations : undefined,
+        includeConversationId: env.ANTIGRAVITY_CONVERSATION_ID?.trim() || undefined,
       });
       return {
         content: [

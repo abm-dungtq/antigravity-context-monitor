@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { analyzeConversation, listConversationsSummary } from '../../analyzer/index.js';
 import type { ContextSnapshot, ConversationSummary } from '../../shared/types.js';
 import {
   APP_RESOURCE_URI,
@@ -279,6 +280,39 @@ describe('ls-client', () => {
       ],
     });
   });
+
+  it('aborts hung requests cleanly on timeoutMs and encodes workspacePath with pathToFileURL', async () => {
+    globalThis.fetch = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    const timedOut = await fetchLsConversations(
+      { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:43210', ANTIGRAVITY_CSRF_TOKEN: 'tok-1' },
+      25,
+    );
+    expect(timedOut).toEqual({ connected: false, conversations: [] });
+
+    let capturedBody = '';
+    globalThis.fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = String(init?.body ?? '');
+      return new Response(JSON.stringify({ plugins: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    await fetchLsPlugins('/tmp/Dự án #1/AGY Plugin', {
+      ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:43210',
+      ANTIGRAVITY_CSRF_TOKEN: 'tok-1',
+    });
+    expect(JSON.parse(capturedBody)).toEqual({
+      workspaceUris: ['file:///tmp/D%E1%BB%B1%20%C3%A1n%20%231/AGY%20Plugin'],
+    });
+  });
 });
 
 describe('context-monitor MCP server', () => {
@@ -470,5 +504,143 @@ describe('context-monitor MCP server', () => {
         {},
       ),
     ).toBe('done-conv');
+  });
+
+  it('caches LS conversations/plugins within TTL and bypasses cache on forceRefresh', async () => {
+    const sampleSnapshot = makeSnapshot();
+    const fetchConvsMock = vi.fn(async () => ({
+      connected: true,
+      conversations: [{ id: 'conv-1', title: 'Cached Title', runState: 'RUN_STATE_RUNNING' }],
+    }));
+    const fetchPluginsMock = vi.fn(async () => ({
+      connected: true,
+      plugins: [],
+    }));
+
+    const server = createContextMonitorServer({
+      appDataDir: tmpDir,
+      env: {},
+      analyzeConversation: async () => sampleSnapshot,
+      listConversationsSummary: async () => [sampleSnapshot.conversation],
+      fetchLsConversations: fetchConvsMock,
+      fetchLsPlugins: fetchPluginsMock,
+      loadAppHtml: () => '<!doctype html><html><body>OK</body></html>',
+    });
+
+    const client = new Client({ name: 'cache-test', version: '1.0.0' }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      await client.callTool({ name: 'refresh_context', arguments: { conversationId: 'conv-1' } });
+      await client.callTool({ name: 'refresh_context', arguments: { conversationId: 'conv-1' } });
+      expect(fetchConvsMock).toHaveBeenCalledTimes(1);
+      expect(fetchPluginsMock).toHaveBeenCalledTimes(1);
+
+      await client.callTool({
+        name: 'refresh_context',
+        arguments: { conversationId: 'conv-1', forceRefresh: true },
+      });
+      expect(fetchConvsMock).toHaveBeenCalledTimes(2);
+      expect(fetchPluginsMock).toHaveBeenCalledTimes(2);
+    } finally {
+      await Promise.all([client.close(), server.close()]);
+    }
+  });
+
+  it('runs real end-to-end integration against analyzeConversation & listConversationsSummary without analyzer mocks', async () => {
+    const appDataDir = path.join(tmpDir, 'antigravity');
+    const configDir = path.join(tmpDir, 'config');
+    const logsDir = path.join(appDataDir, 'brain', 'real-conv-1', '.system_generated', 'logs');
+    const workerLogsDir = path.join(appDataDir, 'brain', 'worker-hidden', '.system_generated', 'logs');
+    mkdirSync(logsDir, { recursive: true });
+    mkdirSync(workerLogsDir, { recursive: true });
+    mkdirSync(configDir, { recursive: true });
+
+    writeFileSync(
+      path.join(logsDir, 'transcript_full.jsonl'),
+      [
+        JSON.stringify({
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: '2026-11-26T05:00:00Z',
+          content: 'Inspect my context usage',
+        }),
+        JSON.stringify({
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-26T05:00:05Z',
+          model: 'gemini-4-neon-high',
+          input_tokens: 34_000,
+          cache_read_tokens: 0,
+          output_tokens: 300,
+        }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-26T05:00:15Z',
+          model: 'gemini-4-neon-high',
+          input_tokens: 12_000,
+          cache_read_tokens: 34_000,
+          output_tokens: 400,
+        }),
+      ].join('\n'),
+      'utf-8',
+    );
+    writeFileSync(
+      path.join(workerLogsDir, 'transcript.jsonl'),
+      JSON.stringify({
+        step_index: 0,
+        type: 'PLANNER_RESPONSE',
+        created_at: '2026-11-26T05:01:00Z',
+        model: 'gemini-4-hydrogen-high',
+        input_tokens: 20_000,
+        cache_read_tokens: 0,
+        output_tokens: 100,
+      }) + '\n',
+      'utf-8',
+    );
+
+    const server = createContextMonitorServer({
+      appDataDir,
+      configDir,
+      env: {},
+      analyzeConversation,
+      listConversationsSummary,
+      fetchLsConversations: async () => ({
+        connected: true,
+        conversations: [
+          {
+            id: 'real-conv-1',
+            title: 'Real E2E Title',
+            runState: 'RUN_STATE_RUNNING',
+            updateTime: '2026-11-26T05:00:15Z',
+          },
+        ],
+      }),
+      fetchLsPlugins: async () => ({ connected: true, plugins: [] }),
+      loadAppHtml: () => '<!doctype html><html><body>E2E</body></html>',
+    });
+
+    const client = new Client({ name: 'real-e2e', version: '1.0.0' }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      const res = await client.callTool({ name: 'open_context_monitor', arguments: {} });
+      expect(res.isError).toBeFalsy();
+      const sc = res.structuredContent as {
+        snapshot: ContextSnapshot;
+        conversations: ConversationSummary[];
+      };
+      expect(sc.snapshot.conversation.id).toBe('real-conv-1');
+      expect(sc.snapshot.conversation.title).toBe('Real E2E Title');
+      expect(sc.snapshot.totalUsedTokens).toBe(46_000);
+      expect(sc.snapshot.categories.reduce((a, c) => a + c.tokens, 0)).toBe(46_000);
+      // Internal worker folder excluded when LS is connected
+      expect(sc.conversations.map((c) => c.id)).toEqual(['real-conv-1']);
+    } finally {
+      await Promise.all([client.close(), server.close()]);
+    }
   });
 });
