@@ -1,18 +1,40 @@
 import type { ConversationSummary, Locale } from '../../shared/types.js';
 import { formatHeadlinePercent, type Translations } from '../i18n.js';
-import { escapeHtml } from '../utils/dom.js';
+import { escapeHtml, renderChevronSvg } from '../utils/dom.js';
 
-export interface SidebarProps {
+export interface ConversationsAccordionProps {
   conversations: ConversationSummary[];
   activeId: string;
+  isOpen: boolean;
   searchQuery: string;
   locale: Locale;
   t: Translations;
 }
 
-export function renderConversationSidebar(props: SidebarProps): string {
-  const { conversations, activeId, searchQuery, locale, t } = props;
+export function renderConversationsAccordionItem(
+  props: ConversationsAccordionProps,
+): string {
+  const { conversations, activeId, isOpen, searchQuery, locale, t } = props;
   if (conversations.length === 0) return '';
+
+  const triggerHtml = `
+    <button
+      type="button"
+      class="cm-acc-trigger"
+      data-action="toggle-conversations"
+      aria-expanded="${isOpen}"
+    >
+      <span class="cm-acc-left">
+        ${renderChevronSvg(isOpen)}
+        <span class="cm-acc-title">${escapeHtml(t.conversationsTitle)}</span>
+      </span>
+      <span class="cm-acc-count tabular-nums">${conversations.length}</span>
+    </button>
+  `;
+
+  if (!isOpen) {
+    return `<div class="cm-acc-item" data-accordion-section="conversations">${triggerHtml}</div>`;
+  }
 
   const q = searchQuery.trim().toLowerCase();
   const filtered = q
@@ -55,37 +77,19 @@ export function renderConversationSidebar(props: SidebarProps): string {
           .join('');
 
   return `
-    <aside class="cm-sidebar" aria-label="${escapeHtml(t.conversationsTitle)}">
-      <div class="cm-sidebar-header">
-        <span>${escapeHtml(t.conversationsTitle)}</span>
-        <span class="tabular-nums">${conversations.length}</span>
+    <div class="cm-acc-item" data-accordion-section="conversations">
+      ${triggerHtml}
+      <div class="cm-acc-body">
+        <input
+          type="search"
+          class="cm-acc-search"
+          data-sidebar-search
+          value="${escapeHtml(searchQuery)}"
+          placeholder="${escapeHtml(t.conversationsSearchPlaceholder)}"
+          aria-label="${escapeHtml(t.conversationsSearchPlaceholder)}"
+        />
+        <div class="cm-conv-list">${listHtml}</div>
       </div>
-      <input
-        type="search"
-        class="cm-sidebar-search"
-        data-sidebar-search
-        value="${escapeHtml(searchQuery)}"
-        placeholder="${escapeHtml(t.conversationsSearchPlaceholder)}"
-        aria-label="${escapeHtml(t.conversationsSearchPlaceholder)}"
-      />
-      <div class="cm-sidebar-list">${listHtml}</div>
-    </aside>
+    </div>
   `;
-}
-
-export function renderNarrowConversationSelect(
-  conversations: ConversationSummary[],
-  activeId: string,
-): string {
-  if (conversations.length <= 1) return '';
-
-  const options = conversations
-    .map((conv) => {
-      const selected = conv.id === activeId ? 'selected' : '';
-      const label = conv.title || conv.id;
-      return `<option value="${escapeHtml(conv.id)}" ${selected}>${escapeHtml(label)}</option>`;
-    })
-    .join('');
-
-  return `<select class="cm-narrow-switcher" data-narrow-conversation aria-label="Conversation">${options}</select>`;
 }

@@ -143,99 +143,31 @@ button {
   color: var(--cm-text-primary);
 }
 
-.cm-shell.has-sidebar {
-  display: block;
-}
-
-.cm-sidebar {
-  display: none;
-}
-
 .cm-main {
   padding: 12px 14px 16px;
   min-width: 0;
-  max-width: 720px;
+  max-width: 640px;
   margin: 0 auto;
 }
 
-@media (min-width: 680px) {
-  .cm-shell.has-sidebar {
-    display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
-    min-height: 100vh;
-  }
-
-  .cm-sidebar {
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--cm-border-primary);
-    background: var(--cm-bg-secondary);
-    padding: 12px 10px;
-    gap: 8px;
-    min-width: 0;
-    max-height: 100vh;
-    position: sticky;
-    top: 0;
-  }
-
-  .cm-main {
-    padding: 16px 20px 24px;
-    max-width: none;
-    width: 100%;
-    margin: 0;
-  }
-
-  .cm-narrow-switcher {
-    display: none !important;
-  }
-}
-
-/* Sidebar */
-.cm-sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--cm-text-tertiary);
-}
-
-.cm-sidebar-search {
-  width: 100%;
-  padding: 6px 9px;
-  border-radius: 7px;
-  border: 1px solid var(--cm-border-primary);
-  background: var(--cm-bg-primary);
-  color: var(--cm-text-primary);
-  font-size: 12px;
-  outline: none;
-}
-
-.cm-sidebar-search:focus {
-  border-color: var(--cm-accent);
-}
-
-.cm-sidebar-list {
+/* Conversations list inside bottom accordion */
+.cm-conv-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 280px;
   overflow-y: auto;
-  min-height: 0;
-  flex: 1;
 }
 
 .cm-conv-item {
   width: 100%;
   text-align: left;
-  padding: 8px 9px;
-  border-radius: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
   border: 1px solid transparent;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
@@ -335,18 +267,6 @@ button {
   letter-spacing: -0.01em;
   color: var(--cm-text-primary);
   white-space: nowrap;
-}
-
-.cm-narrow-switcher {
-  max-width: 165px;
-  min-width: 0;
-  padding: 3px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--cm-border-primary);
-  background: var(--cm-bg-secondary);
-  color: var(--cm-text-secondary);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
 }
 
 .cm-controls {

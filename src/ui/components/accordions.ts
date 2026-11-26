@@ -10,6 +10,7 @@ export interface AccordionsProps {
   searchQueries: Record<AccordionKey, string>;
   locale: Locale;
   t: Translations;
+  extraBottomHtml?: string;
 }
 
 const ACCORDION_ORDER: AccordionKey[] = [
@@ -39,7 +40,7 @@ function filterAndSortItems(
 }
 
 export function renderAccordions(props: AccordionsProps): string {
-  const { accordions, openAccordions, searchQueries, locale, t } = props;
+  const { accordions, openAccordions, searchQueries, locale, t, extraBottomHtml } = props;
 
   const blocks = ACCORDION_ORDER.map((key) => {
     const rawItems = accordions[key] ?? [];
@@ -121,5 +122,5 @@ export function renderAccordions(props: AccordionsProps): string {
     `;
   }).join('');
 
-  return `<section class="cm-accordions">${blocks}</section>`;
+  return `<section class="cm-accordions">${blocks}${extraBottomHtml ?? ''}</section>`;
 }

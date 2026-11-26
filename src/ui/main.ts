@@ -20,10 +20,7 @@ import {
   type AccordionKey,
 } from './components/accordions.js';
 import { renderTurnChartSection } from './components/chart.js';
-import {
-  renderConversationSidebar,
-  renderNarrowConversationSelect,
-} from './components/sidebar.js';
+import { renderConversationsAccordionItem } from './components/sidebar.js';
 import {
   formatHeadlinePercent,
   formatPercent,
@@ -71,6 +68,7 @@ interface UiState {
   errorMessage: string | null;
   autoRefresh: boolean;
   chartOpen: boolean;
+  conversationsOpen: boolean;
   hoveredTurn: number | null;
   openAccordions: Set<AccordionKey>;
   accordionSearches: Record<AccordionKey, string>;
@@ -102,6 +100,7 @@ const state: UiState = {
   errorMessage: null,
   autoRefresh: true,
   chartOpen: true,
+  conversationsOpen: false,
   hoveredTurn: null,
   openAccordions: new Set<AccordionKey>(),
   accordionSearches: {
@@ -456,17 +455,11 @@ function renderSkeleton(t: Translations): string {
   `;
 }
 
-function renderHeader(snap: ContextSnapshot | null, t: Translations): string {
-  const narrowSelect = renderNarrowConversationSelect(
-    state.conversations,
-    state.selectedConversationId ?? snap?.conversation.id ?? '',
-  );
-
+function renderHeader(t: Translations): string {
   return `
     <header class="cm-header">
       <div class="cm-title-group">
         <h1 class="cm-title">${escapeHtml(t.title)}</h1>
-        ${narrowSelect}
       </div>
       <div class="cm-controls">
         <button
@@ -521,17 +514,18 @@ function render(): void {
   }
 
   const snap = state.snapshot;
-  const hasSidebar = state.conversations.length > 0;
   const activeConvId = state.selectedConversationId ?? snap?.conversation.id ?? '';
-  const sidebarHtml = hasSidebar
-    ? renderConversationSidebar({
-        conversations: state.conversations,
-        activeId: activeConvId,
-        searchQuery: state.sidebarSearch,
-        locale: state.locale,
-        t,
-      })
-    : '';
+  const conversationsAccordionHtml =
+    state.conversations.length > 0
+      ? renderConversationsAccordionItem({
+          conversations: state.conversations,
+          activeId: activeConvId,
+          isOpen: state.conversationsOpen,
+          searchQuery: state.sidebarSearch,
+          locale: state.locale,
+          t,
+        })
+      : '';
 
   let bodyHtml = '';
   if (state.cancelled && !snap) {
@@ -573,6 +567,7 @@ function render(): void {
         searchQueries: state.accordionSearches,
         locale: state.locale,
         t,
+        extraBottomHtml: conversationsAccordionHtml,
       })}
     `;
   }
@@ -582,10 +577,9 @@ function render(): void {
     : '';
 
   rootEl.innerHTML = `
-    <div class="cm-shell ${hasSidebar ? 'has-sidebar' : ''}">
-      ${sidebarHtml}
+    <div class="cm-shell">
       <main class="cm-main">
-        ${renderHeader(snap, t)}
+        ${renderHeader(t)}
         ${bodyHtml}
       </main>
     </div>
@@ -671,6 +665,12 @@ function attachDomEvents(): void {
 
       if (action === 'toggle-chart') {
         state.chartOpen = !state.chartOpen;
+        render();
+        return;
+      }
+
+      if (action === 'toggle-conversations') {
+        state.conversationsOpen = !state.conversationsOpen;
         render();
         return;
       }
@@ -775,17 +775,6 @@ function attachDomEvents(): void {
       if (Number.isFinite(turnNum)) {
         state.hoveredTurn = turnNum;
         render();
-      }
-    }
-  });
-
-  rootEl.addEventListener('change', (event) => {
-    const target = event.target as HTMLSelectElement | null;
-    if (target?.matches('[data-narrow-conversation]')) {
-      const id = target.value;
-      if (id && id !== state.selectedConversationId) {
-        state.selectedConversationId = id;
-        void refreshContext(id);
       }
     }
   });
