@@ -332,6 +332,16 @@ function buildHints(params: {
   return hints;
 }
 
+const CATEGORY_ORDER_TIEBREAKER: Record<CategoryId, number> = {
+  messages: 0,
+  memory_files: 1,
+  system_prompt: 2,
+  skills: 3,
+  system_tools: 4,
+  custom_agents: 5,
+  mcp_instructions: 6,
+};
+
 function reconcileCategories(params: {
   totalUsedTokens: number;
   contextLimit: number;
@@ -363,13 +373,13 @@ function reconcileCategories(params: {
 
   if (!hasTurns) {
     const emptyOrder: CategoryId[] = [
+      'messages',
+      'memory_files',
       'system_prompt',
+      'skills',
       'system_tools',
       'custom_agents',
-      'memory_files',
-      'skills',
       'mcp_instructions',
-      'messages',
     ];
     const counts: Partial<Record<CategoryId, number>> = {
       custom_agents: agentsCount,
@@ -391,10 +401,15 @@ function reconcileCategories(params: {
 
   const measuredStaticSum =
     measuredMemory + measuredSkills + measuredAgents + measuredMcpInst;
-  const baselineOverhead = Math.min(
-    totalUsedTokens,
-    Math.max(0, parsed.latestBaselineTokens - parsed.latestBaselineUserTokens)
+  const turn1Ceiling = Math.max(
+    0,
+    (parsed.turn1BaselineTokens || parsed.latestBaselineTokens) - parsed.turn1UserTokens
   );
+  const baselineOverhead = Math.min(totalUsedTokens, turn1Ceiling);
+  const minCoreSystem =
+    baselineOverhead >= 6_000
+      ? Math.round(baselineOverhead * 0.35)
+      : Math.round(baselineOverhead * 0.45);
 
   let memoryTokens = measuredMemory;
   let skillsTokens = measuredSkills;
@@ -403,38 +418,42 @@ function reconcileCategories(params: {
   let systemPromptTokens = 0;
   let systemToolsTokens = 0;
 
-  if (baselineOverhead >= measuredStaticSum) {
+  if (baselineOverhead - measuredStaticSum >= minCoreSystem) {
     const residual = baselineOverhead - measuredStaticSum;
     systemPromptTokens = Math.round(residual * 0.68);
     systemToolsTokens = residual - systemPromptTokens;
   } else {
-    const targetStatic = Math.min(
-      totalUsedTokens,
-      baselineOverhead > 0 ? baselineOverhead : totalUsedTokens
-    );
-    if (measuredStaticSum > 0 && targetStatic > 0) {
-      const scale = targetStatic / measuredStaticSum;
+    const coreSystem = minCoreSystem;
+    systemPromptTokens = Math.round(coreSystem * 0.68);
+    systemToolsTokens = coreSystem - systemPromptTokens;
+
+    const targetMeasured = Math.max(0, baselineOverhead - coreSystem);
+    if (measuredStaticSum > 0 && targetMeasured > 0) {
+      const scale = targetMeasured / measuredStaticSum;
       memoryTokens = Math.round(measuredMemory * scale);
       skillsTokens = Math.round(measuredSkills * scale);
       agentsTokens = Math.round(measuredAgents * scale);
       mcpInstTokens = Math.round(measuredMcpInst * scale);
 
-      // Ensure scaled sum does not exceed targetStatic
       const scaledSum =
         memoryTokens + skillsTokens + agentsTokens + mcpInstTokens;
-      if (scaledSum > targetStatic) {
-        let excess = scaledSum - targetStatic;
+      if (scaledSum !== targetMeasured) {
+        let diff = scaledSum - targetMeasured;
         const arr = [
           { key: 'mem', val: memoryTokens },
           { key: 'sk', val: skillsTokens },
           { key: 'ag', val: agentsTokens },
           { key: 'mcp', val: mcpInstTokens },
         ].sort((a, b) => b.val - a.val);
-        for (const item of arr) {
-          if (excess <= 0) break;
-          const take = Math.min(item.val, excess);
-          item.val -= take;
-          excess -= take;
+        if (diff > 0) {
+          for (const item of arr) {
+            if (diff <= 0) break;
+            const take = Math.min(item.val, diff);
+            item.val -= take;
+            diff -= take;
+          }
+        } else if (diff < 0 && arr[0]) {
+          arr[0].val += -diff;
         }
         memoryTokens = arr.find((x) => x.key === 'mem')!.val;
         skillsTokens = arr.find((x) => x.key === 'sk')!.val;
@@ -447,8 +466,6 @@ function reconcileCategories(params: {
       agentsTokens = 0;
       mcpInstTokens = 0;
     }
-    systemPromptTokens = 0;
-    systemToolsTokens = 0;
   }
 
   const activeStaticSum =
@@ -470,12 +487,39 @@ function reconcileCategories(params: {
 
   const rawCategories: ContextCategory[] = [
     {
+      id: 'messages',
+      color: CATEGORY_COLORS.messages,
+      tokens: messagesTokens,
+      percent: toPercent(messagesTokens, contextLimit),
+      exact: false,
+      calibrated: true,
+      count: parsed.turns.length,
+    },
+    {
+      id: 'memory_files',
+      color: CATEGORY_COLORS.memory_files,
+      tokens: memoryTokens,
+      percent: toPercent(memoryTokens, contextLimit),
+      exact: false,
+      calibrated: false,
+      count: memoryCount,
+    },
+    {
       id: 'system_prompt',
       color: CATEGORY_COLORS.system_prompt,
       tokens: systemPromptTokens,
       percent: toPercent(systemPromptTokens, contextLimit),
       exact: false,
       calibrated: true,
+    },
+    {
+      id: 'skills',
+      color: CATEGORY_COLORS.skills,
+      tokens: skillsTokens,
+      percent: toPercent(skillsTokens, contextLimit),
+      exact: false,
+      calibrated: false,
+      count: skillsCount,
     },
     {
       id: 'system_tools',
@@ -495,24 +539,6 @@ function reconcileCategories(params: {
       count: agentsCount,
     },
     {
-      id: 'memory_files',
-      color: CATEGORY_COLORS.memory_files,
-      tokens: memoryTokens,
-      percent: toPercent(memoryTokens, contextLimit),
-      exact: false,
-      calibrated: false,
-      count: memoryCount,
-    },
-    {
-      id: 'skills',
-      color: CATEGORY_COLORS.skills,
-      tokens: skillsTokens,
-      percent: toPercent(skillsTokens, contextLimit),
-      exact: false,
-      calibrated: false,
-      count: skillsCount,
-    },
-    {
       id: 'mcp_instructions',
       color: CATEGORY_COLORS.mcp_instructions,
       tokens: mcpInstTokens,
@@ -520,15 +546,6 @@ function reconcileCategories(params: {
       exact: false,
       calibrated: false,
       count: mcpInstCount,
-    },
-    {
-      id: 'messages',
-      color: CATEGORY_COLORS.messages,
-      tokens: messagesTokens,
-      percent: toPercent(messagesTokens, contextLimit),
-      exact: false,
-      calibrated: true,
-      count: parsed.turns.length,
     },
   ];
 
@@ -542,6 +559,11 @@ function reconcileCategories(params: {
       largest.percent = toPercent(largest.tokens, contextLimit);
     }
   }
+
+  rawCategories.sort((a, b) => {
+    if (b.tokens !== a.tokens) return b.tokens - a.tokens;
+    return CATEGORY_ORDER_TIEBREAKER[a.id] - CATEGORY_ORDER_TIEBREAKER[b.id];
+  });
 
   return rawCategories;
 }
@@ -600,8 +622,8 @@ export async function analyzeConversation(
       parsed.loadedSkillNames.has(sk.name) ||
       parsed.loadedSkillNames.has(path.basename(path.dirname(sk.path)));
 
-    const activeTokens = isLoaded ? sk.fullTokens : sk.indexTokens;
-    activeSkillsTokens += activeTokens;
+    // Static <skills> index stays constant across turns; full SKILL.md reads belong in Messages.
+    activeSkillsTokens += sk.indexTokens;
 
     if (!isLoaded) {
       deferredSkillsBodyTokens += sk.bodyTokens;
@@ -610,9 +632,9 @@ export async function analyzeConversation(
 
     skillItems.push({
       name: sk.name,
-      sublabel: sk.group,
+      sublabel: isLoaded ? `${sk.group} · full ~${sk.fullTokens} tok in msgs` : sk.group,
       path: sk.path,
-      tokens: activeTokens,
+      tokens: sk.indexTokens,
       chars: sk.chars,
       status: isLoaded ? 'loaded' : 'indexed',
       group: sk.group,

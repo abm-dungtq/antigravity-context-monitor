@@ -46,19 +46,22 @@ const scanCache = new Map<string, ScanCacheEntry>();
 const BUILTIN_SUBAGENTS: Array<{ name: string; description: string }> = [
   {
     name: 'self',
-    description: 'Delegate focused subtask to a copy of the current agent context.',
+    description:
+      'Subagent that inherits the parent agent full configuration including tools, system prompt, and model.',
   },
   {
     name: 'research',
-    description: 'Deep codebase and documentation researcher for multi-file exploration.',
+    description:
+      'Research subagent with read-only tools for exploring the codebase, searching the web, and reading files.',
   },
   {
     name: 'browser',
-    description: 'Interactive web browser subagent for inspecting live pages and UI.',
+    description:
+      'Browser subagent that operates a built-in webview browser to navigate and interact with live web pages.',
   },
   {
     name: 'image-generator',
-    description: 'Generate visual assets and mockups from structured art direction.',
+    description: 'Generates or edits images from a brief and replies with the saved file paths.',
   },
 ];
 
@@ -105,6 +108,36 @@ function safeReaddir(dirPath: string): fs.Dirent[] {
   }
 }
 
+function extractYamlScalarOrBlock(block: string, fieldName: string): string | undefined {
+  const lines = block.split(/\r?\n/);
+  const keyRe = new RegExp(`^${fieldName}:\\s*(.*)$`);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(keyRe);
+    if (!m) continue;
+    const inlineVal = m[1].trim();
+    if (inlineVal === '>' || inlineVal === '>-' || inlineVal === '|' || inlineVal === '|-') {
+      const collected: string[] = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        const line = lines[j];
+        if (line.trim() === '') {
+          collected.push('');
+          continue;
+        }
+        if (/^\s+/.test(line)) {
+          collected.push(line.trim());
+        } else {
+          break;
+        }
+      }
+      const joined = collected.join(' ').replace(/\s+/g, ' ').trim();
+      return joined || undefined;
+    }
+    const unquoted = inlineVal.replace(/^["']|["']$/g, '').trim();
+    return unquoted || undefined;
+  }
+  return undefined;
+}
+
 function parseFrontmatter(content: string): {
   name?: string;
   description?: string;
@@ -115,11 +148,9 @@ function parseFrontmatter(content: string): {
     return {};
   }
   const block = match[1];
-  const nameMatch = block.match(/^name:\s*["']?(.+?)["']?\s*$/m);
-  const descMatch = block.match(/^description:\s*["']?(.+?)["']?\s*$/m);
   return {
-    name: nameMatch?.[1]?.trim(),
-    description: descMatch?.[1]?.trim(),
+    name: extractYamlScalarOrBlock(block, 'name'),
+    description: extractYamlScalarOrBlock(block, 'description'),
     frontmatterRaw: block,
   };
 }
@@ -223,8 +254,8 @@ function scanSkillsInDir(
     const name = fm.name || entry.name;
     const description = fm.description || '';
     const indexText = description
-      ? `${name}: ${description}`
-      : fm.frontmatterRaw || content.slice(0, 240);
+      ? `- ${name} (${skillMdPath}): ${description}`
+      : `- ${name} (${skillMdPath})`;
     const indexTokens = estimateTokens(indexText, 'prose');
     const fullTokens = estimateTokens(content, 'prose');
     const bodyTokens = Math.max(0, fullTokens - indexTokens);

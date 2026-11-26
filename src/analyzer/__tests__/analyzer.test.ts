@@ -428,6 +428,121 @@ describe('analyzer & reconciliation', () => {
     expect(staticHint!.detailVi).toMatch(/\d+\.\d{3} token/);
     expect(staticHint!.detailEn).toMatch(/\d+,\d{3} tokens/);
   });
+
+  it('does not double-count loaded SKILL.md into Turn 1 static skills, parses multiline YAML, preserves core system tokens on overflow, and sorts categories desc', async () => {
+    const root = makeTempDir('agy-loaded-skill-');
+    const appDataDir = path.join(root, 'antigravity');
+    const configDir = path.join(root, 'config');
+    const convId = 'conv-loaded';
+    const logsDir = path.join(appDataDir, 'brain', convId, '.system_generated', 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+
+    const heavySkillDir = path.join(configDir, 'skills', 'heavy-skill');
+    fs.mkdirSync(heavySkillDir, { recursive: true });
+    const heavySkillPath = path.join(heavySkillDir, 'SKILL.md');
+    fs.writeFileSync(
+      heavySkillPath,
+      [
+        '---',
+        'name: heavy-skill',
+        'description: >-',
+        '  Multiline YAML description that summarizes',
+        '  what this skill does cleanly.',
+        '---',
+        '',
+        'Full body section '.repeat(1200),
+      ].join('\n')
+    );
+
+    const scan = scanWorkspaceContext({ appDataDir, configDir });
+    const scannedHeavy = scan.skills.find((s) => s.name === 'heavy-skill');
+    expect(scannedHeavy).toBeDefined();
+    expect(scannedHeavy!.description).toBe(
+      'Multiline YAML description that summarizes what this skill does cleanly.'
+    );
+    expect(scannedHeavy!.indexTokens).toBeLessThan(80);
+
+    fs.writeFileSync(
+      path.join(logsDir, 'transcript_full.jsonl'),
+      [
+        JSON.stringify({
+          step_index: 0,
+          type: 'USER_INPUT',
+          created_at: '2026-11-26T02:00:00Z',
+          content: 'Load heavy-skill and run task',
+          media: [{ path: '/tmp/a.png' }],
+        }),
+        JSON.stringify({
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-26T02:00:05Z',
+          model: 'gemini-4-hydrogen-high',
+          input_tokens: 33_340,
+          cache_read_tokens: 0,
+          output_tokens: 400,
+          tool_calls: [{ name: 'read_file', args: { Path: heavySkillPath } }],
+        }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'PLANNER_RESPONSE',
+          created_at: '2026-11-26T02:00:15Z',
+          model: 'gemini-4-hydrogen-high',
+          input_tokens: 45_000,
+          cache_read_tokens: 33_000,
+          output_tokens: 500,
+        }),
+      ].join('\n')
+    );
+
+    const snapshot = await analyzeConversation({
+      appDataDir,
+      configDir,
+      conversationId: convId,
+    });
+
+    const skillsCat = snapshot.categories.find((c) => c.id === 'skills')!;
+    const sysPromptCat = snapshot.categories.find((c) => c.id === 'system_prompt')!;
+    const sysToolsCat = snapshot.categories.find((c) => c.id === 'system_tools')!;
+    const msgsCat = snapshot.categories.find((c) => c.id === 'messages')!;
+
+    expect(skillsCat.tokens).toBe(scannedHeavy!.indexTokens);
+    expect(sysPromptCat.tokens).toBeGreaterThan(10_000);
+    expect(sysToolsCat.tokens).toBeGreaterThan(5_000);
+    expect(msgsCat.tokens).toBeGreaterThan(40_000);
+    expect(snapshot.categories[0].id).toBe('messages');
+    for (let i = 1; i < snapshot.categories.length; i++) {
+      expect(snapshot.categories[i - 1].tokens).toBeGreaterThanOrEqual(
+        snapshot.categories[i].tokens
+      );
+    }
+    expect(snapshot.categories.reduce((acc, c) => acc + c.tokens, 0)).toBe(
+      snapshot.totalUsedTokens
+    );
+
+    // Overflow scenario: many skills exceeding Turn 1 ceiling still preserve calibrated system_prompt & system_tools
+    for (let i = 0; i < 120; i++) {
+      const dir = path.join(configDir, 'skills', `extra-${i}`);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'SKILL.md'),
+        `---\nname: extra-${i}\ndescription: ${'Skill description padding '.repeat(35)}\n---\nBody`
+      );
+    }
+    const overflowSnap = await analyzeConversation({
+      appDataDir,
+      configDir,
+      conversationId: convId,
+    });
+    expect(
+      overflowSnap.categories.find((c) => c.id === 'system_prompt')!.tokens
+    ).toBeGreaterThan(0);
+    expect(
+      overflowSnap.categories.find((c) => c.id === 'system_tools')!.tokens
+    ).toBeGreaterThan(0);
+    expect(overflowSnap.categories.reduce((acc, c) => acc + c.tokens, 0)).toBe(
+      overflowSnap.totalUsedTokens
+    );
+  });
 });
 
 describe('real local brain integration (if present)', () => {

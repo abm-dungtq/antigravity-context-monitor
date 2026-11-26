@@ -460,7 +460,8 @@ export async function parseTranscript(
       if (!firstUserContent && cleaned) {
         firstUserContent = cleaned.slice(0, 160);
       }
-      pendingUserTokens += estimateTokens(entry.content, 'prose');
+      const mediaCount = Array.isArray(entry.media) ? entry.media.length : 0;
+      pendingUserTokens += estimateTokens(entry.content, 'prose') + mediaCount * 300;
       continue;
     }
 
